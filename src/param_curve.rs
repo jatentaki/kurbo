@@ -139,6 +139,58 @@ pub trait ParamCurveNearest {
     fn nearest(&self, p: Point, accuracy: f64) -> (f64, f64);
 }
 
+// FIXME: std::fmt::Debug trait bound is just for debugging purposes
+pub trait ParamCurveFit: ParamCurveNearest + Sized + std::fmt::Debug {
+    /// Find the curve which best approximates a set of points in
+    /// the least squares metric
+    fn fit(points: &[Point]) -> Self
+    {
+        const NEAREST_PREC: f64 = 1e-6; // TODO: how much?
+        const STOP_TOL: f64 = 1.; // TODO: how much?
+
+        let n_points = points.len();
+
+        let mut proposal = Self::initial_guess(points);
+
+        // initialize with placeholders
+        let mut error = std::f64::INFINITY;
+        let mut ts = vec![0.; n_points];
+
+        loop {
+            let mut new_error = 0.;
+
+            // find projections
+            for i in 0..n_points {
+                let point = points[i];
+                let (nearest_t, distance) = proposal.nearest(point, NEAREST_PREC);
+                new_error += distance;
+                ts[i] = nearest_t;
+            };
+
+            dbg!(error, new_error);
+            // check if the curve is good enough
+            if (new_error - error).abs() < STOP_TOL {
+                break;
+            } else {
+                error = new_error;
+            };
+
+            // fit a new curve with current projections
+            proposal = Self::fit_with_t(&points, &ts);
+        };
+
+        proposal
+    }
+
+    /// helper function: fit the curve assuming each point has a known
+    /// parameter `t`
+    fn fit_with_t(points: &[Point], ts: &[f64]) -> Self;
+
+    /// helper function: quickly create a feasible initial guess given
+    /// a set of points
+    fn initial_guess(points: &[Point]) -> Self;
+}
+
 /// A parametrized curve that reports its curvature.
 pub trait ParamCurveCurvature: ParamCurveDeriv
 where

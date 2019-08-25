@@ -35,6 +35,8 @@ mod size;
 mod svg;
 mod translate_scale;
 mod vec2;
+mod fitting;
+mod conversions;
 
 pub use crate::affine::*;
 pub use crate::arc::*;
