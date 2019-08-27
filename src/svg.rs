@@ -396,7 +396,7 @@ impl Arc {
 mod tests {
     use approx::assert_abs_diff_eq;
     use crate::{
-        PathSegVec, BezPath, CubicBez, Line, ParamCurve, 
+        BezPath, CubicBez, Line, ParamCurve, 
         PathSeg, Point, QuadBez, Shape
     };
 
@@ -544,8 +544,8 @@ mod tests {
             let deser_vec = deser.segments().collect::<Vec<PathSeg>>();
 
             assert_abs_diff_eq!(
-                PathSegVec::new(vec),
-                PathSegVec::new(deser_vec)
+                vec.as_slice(),
+                deser_vec.as_slice(),
             );
         }
     }

@@ -522,30 +522,6 @@ impl AbsDiffEq for PathSeg {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct PathSegVec(Vec<PathSeg>);
-
-impl PathSegVec {
-    pub fn new(v: Vec<PathSeg>) -> PathSegVec {
-        PathSegVec(v)
-    }
-}
-
-impl AbsDiffEq for PathSegVec {
-    type Epsilon = f64;
-
-    fn default_epsilon() -> f64 {
-        1e-6
-    }
-
-    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
-        self.0.len() == other.0.len() &&
-        self.0.iter()
-            .zip(other.0.iter())
-            .all(|(s, o)| PathSeg::abs_diff_eq(s, o, epsilon))
-    }
-}
-
 impl Shape for BezPath {
     type BezPathIter = std::vec::IntoIter<PathEl>;
 
