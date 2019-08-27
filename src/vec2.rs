@@ -226,6 +226,21 @@ impl Neg for Vec2 {
     }
 }
 
+use approx::AbsDiffEq;
+
+impl AbsDiffEq for Vec2 {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        1e-6
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        f64::abs_diff_eq(&self.x, &other.x, epsilon) &&
+        f64::abs_diff_eq(&self.y, &other.y, epsilon)
+    }
+}
+
 // Conversions to and from mint
 #[cfg(feature = "mint")]
 impl From<Vec2> for mint::Vector2<f64> {
