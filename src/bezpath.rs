@@ -500,6 +500,52 @@ impl From<QuadBez> for PathSeg {
     }
 }
 
+use approx::AbsDiffEq;
+
+impl AbsDiffEq for PathSeg {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        1e-6
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        use crate::Line as LineBez;
+        use PathSeg::*;
+
+        match (self, other) {
+            (Line(l1), Line(l2)) => LineBez::abs_diff_eq(l1, l2, epsilon),
+            (Quad(q1), Quad(q2)) => QuadBez::abs_diff_eq(q1, q2, epsilon),
+            (Cubic(c1), Cubic(c2)) => CubicBez::abs_diff_eq(c1, c2, epsilon),
+            _ => false
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct PathSegVec(Vec<PathSeg>);
+
+impl PathSegVec {
+    pub fn new(v: Vec<PathSeg>) -> PathSegVec {
+        PathSegVec(v)
+    }
+}
+
+impl AbsDiffEq for PathSegVec {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        1e-6
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        self.0.len() == other.0.len() &&
+        self.0.iter()
+            .zip(other.0.iter())
+            .all(|(s, o)| PathSeg::abs_diff_eq(s, o, epsilon))
+    }
+}
+
 impl Shape for BezPath {
     type BezPathIter = std::vec::IntoIter<PathEl>;
 

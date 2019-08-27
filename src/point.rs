@@ -129,6 +129,21 @@ impl fmt::Display for Point {
     }
 }
 
+use approx::AbsDiffEq;
+
+impl AbsDiffEq for Point {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        f64::default_epsilon()
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        f64::abs_diff_eq(&self.x, &other.x, epsilon) &&
+        f64::abs_diff_eq(&self.y, &other.y, epsilon)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

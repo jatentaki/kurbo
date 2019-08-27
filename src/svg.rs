@@ -394,7 +394,11 @@ impl Arc {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BezPath, CubicBez, Line, ParamCurve, PathSeg, Point, QuadBez, Shape};
+    use approx::assert_abs_diff_eq;
+    use crate::{
+        PathSegVec, BezPath, CubicBez, Line, ParamCurve, 
+        PathSeg, Point, QuadBez, Shape
+    };
 
     #[test]
     fn test_parse_svg() {
@@ -539,7 +543,10 @@ mod tests {
 
             let deser_vec = deser.segments().collect::<Vec<PathSeg>>();
 
-            assert_eq!(vec, deser_vec);
+            assert_abs_diff_eq!(
+                PathSegVec::new(vec),
+                PathSegVec::new(deser_vec)
+            );
         }
     }
 }
