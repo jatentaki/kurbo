@@ -296,7 +296,7 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
     println!("ts:{:?}\nT:\n{}\nM_free:{}\nT_M:\n{}\nP:{}", ts, &T, &M_free, &T_M_free_embedded, &P);
     // now we have T, M and P and can solve least squares for C
     let svd = T_M_free_embedded.svd(true, true);
-    let least_sqr = svd.solve(&P, 0.).expect("solve failed");
+    let least_sqr = svd.solve(&P, 1e-6).expect("solve failed");
 
     // and reconstruct the bezier control points
     let mut ctrl_points = Vec::with_capacity(4);
@@ -408,7 +408,6 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
             error = new_error;
         };
 
-        dbg!();
         // fit a new curve with current projections
         proposal = fit_with_t(&points, &ts, constraints);
         iteration += 1;
@@ -417,6 +416,7 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
     (error, proposal)
 }
 
+#[cfg(test)]
 mod test {
     use crate::{
         Point, CubicBez, assert_abs_diff_eq,
@@ -553,118 +553,97 @@ mod test {
         assert_eq!(curve.p0, Point::new(5., 5.));
     }
 
-    use rusty_fork::*;
+    #[test]
+    fn test_fitting_4() {
+        let points = [
+            Point::new(5., 7.),
+            Point::new(3., 2.),
+            Point::new(90., 60.),
+            Point::new(30., 10.),
+        ];
 
-    rusty_fork_test! {
-        #![rusty_fork(timeout_ms = 1000)]
+        let constraints = [Free, Free, Free, Free];
 
-        #[test]
-        fn test_fitting_4() {
-            let points = [
-                Point::new(5., 7.),
-                Point::new(3., 2.),
-                Point::new(90., 60.),
-                Point::new(30., 10.),
-            ];
+        let (error, _curve) = fit(&points, &constraints);
+        assert!(error < 5.);
+    }
 
-            let constraints = [Free, Free, Free, Free];
+    #[test]
+    fn test_fitting_3() {
+        let points = [
+            Point::new(5., 7.),
+            Point::new(3., 2.),
+            Point::new(30., 10.),
+        ];
 
-            let (error, _curve) = fit(&points, &constraints);
-            assert!(error < 5.);
-        }
+        let constraints = [Free, Free, Free, Free];
 
-        #[test]
-        fn test_fitting_4_2() {
-            let points = [
-                Point::new(5., 7.),
-                Point::new(3., 2.),
-                Point::new(2., 10.),
-                Point::new(3., 13.),
-            ];
+        let (error, _curve) = fit(&points, &constraints);
+        assert!(error < 5.);
+    }
 
-            let constraints = [Free, Free, Free, Free];
+    #[test]
+    fn test_fitting_no_dof() {
+        let points = [
+            Point::new(0., 0.),
+            Point::new(90., 60.),
+            Point::new(30., 10.),
+            Point::new(50., 30.),
+            Point::new(60., 20.),
+            Point::new(80., 15.),
+            Point::new(65., 40.)
+        ];
 
-            let (error, _curve) = fit(&points, &constraints);
-            assert!(error < 5.);
-        }
+        let ctrl_points = [
+            Point::new(0., 0.),
+            Point::new(1., 0.),
+            Point::new(0., 2.),
+            Point::new(3., 3.),
 
-        #[test]
-        fn test_fitting_3() {
-            let points = [
-                Point::new(5., 7.),
-                Point::new(3., 2.),
-                Point::new(30., 10.),
-            ];
+        ];
 
-            let constraints = [Free, Free, Free, Free];
+        let constraints: [Constraint; 4] = [
+            ctrl_points[0].into(),
+            ctrl_points[1].into(),
+            ctrl_points[2].into(),
+            ctrl_points[3].into(),
+        ];
 
-            let (error, _curve) = fit(&points, &constraints);
-            assert!(error < 5.);
-        }
+        let (_error, curve) = fit(&points, &constraints);
+        let expected = CubicBez::new(
+            ctrl_points[0],
+            ctrl_points[1],
+            ctrl_points[2],
+            ctrl_points[3],
+        );
 
-        #[test]
-        fn test_fitting_no_dof() {
-            let points = [
-                Point::new(0., 0.),
-                Point::new(90., 60.),
-                Point::new(30., 10.),
-                Point::new(50., 30.),
-                Point::new(60., 20.),
-                Point::new(80., 15.),
-                Point::new(65., 40.)
-            ];
+        assert_abs_diff_eq!(curve, expected);
+    }
 
-            let ctrl_points = [
-                Point::new(0., 0.),
-                Point::new(1., 0.),
-                Point::new(0., 2.),
-                Point::new(3., 3.),
+    #[test]
+    fn test_fitting_line() {
+        let points = [
+            Point::new(0., 0.),
+            Point::new(90., 60.),
+            Point::new(30., 10.),
+            Point::new(50., 30.),
+            Point::new(60., 20.),
+            Point::new(80., 15.),
+            Point::new(65., 40.)
+        ];
 
-            ];
+        let constraints: [Constraint; 4] = [
+            Line(Point::new(0., 0.), Point::new(1., 0.)),
+            Free,
+            Free,
+            Line(Point::new(0., 0.), Point::new(1., 1.)),
+        ];
+        
+        let (_error, curve) = fit(&points, &constraints);
 
-            let constraints: [Constraint; 4] = [
-                ctrl_points[0].into(),
-                ctrl_points[1].into(),
-                ctrl_points[2].into(),
-                ctrl_points[3].into(),
-            ];
+        assert_abs_diff_eq!(curve.p0.y, 0.);
 
-            let (_error, curve) = fit(&points, &constraints);
-            let expected = CubicBez::new(
-                ctrl_points[0],
-                ctrl_points[1],
-                ctrl_points[2],
-                ctrl_points[3],
-            );
-
-            assert_abs_diff_eq!(curve, expected);
-        }
-
-        #[test]
-        fn test_fitting_line() {
-            let points = [
-                Point::new(0., 0.),
-                Point::new(90., 60.),
-                Point::new(30., 10.),
-                Point::new(50., 30.),
-                Point::new(60., 20.),
-                Point::new(80., 15.),
-                Point::new(65., 40.)
-            ];
-
-            let constraints: [Constraint; 4] = [
-                Line(Point::new(0., 0.), Point::new(1., 0.)),
-                Free,
-                Free,
-                Line(Point::new(0., 0.), Point::new(1., 1.)),
-            ];
-            
-            let (_error, curve) = fit(&points, &constraints);
-
-            assert_abs_diff_eq!(curve.p0.y, 0.);
-
-            let p3 = curve.p3;
-            assert_abs_diff_eq!(p3.x - p3.y, 0.);
-        }
+        let p3 = curve.p3;
+        assert_abs_diff_eq!(p3.x - p3.y, 0.);
     }
 }

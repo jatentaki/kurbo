@@ -57,4 +57,5 @@ pub use crate::vec2::*;
 pub use fitting::*;
 pub use approx::AbsDiffEq;
 
+#[cfg(test)]
 use approx::assert_abs_diff_eq;
