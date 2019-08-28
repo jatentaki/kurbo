@@ -5,7 +5,7 @@ use std::ops::{Add, Sub};
 use crate::{PathEl, Point, Shape, Size, Vec2};
 
 /// A rectangle.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(PartialEq, Clone, Copy, Default, Debug)]
 pub struct Rect {
     /// The minimum x coordinate (left edge).
     pub x0: f64,
@@ -310,6 +310,23 @@ impl Iterator for RectPathIter {
             5 => Some(PathEl::ClosePath),
             _ => None,
         }
+    }
+}
+
+use approx::AbsDiffEq;
+
+impl AbsDiffEq for Rect {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        1e-6
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        f64::abs_diff_eq(&self.x0, &other.x0, epsilon)
+            && f64::abs_diff_eq(&self.y0, &other.y0, epsilon)
+            && f64::abs_diff_eq(&self.x1, &other.x1, epsilon)
+            && f64::abs_diff_eq(&self.y1, &other.y1, epsilon)
     }
 }
 

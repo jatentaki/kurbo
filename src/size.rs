@@ -88,6 +88,20 @@ impl From<Size> for (f64, f64) {
     }
 }
 
+use approx::AbsDiffEq;
+
+impl AbsDiffEq for Size {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        1e-6
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        Vec2::abs_diff_eq(&self.to_vec2(), &other.to_vec2(), epsilon)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

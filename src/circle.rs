@@ -6,7 +6,7 @@ use std::ops::{Add, Sub};
 use crate::{PathEl, Point, Rect, Shape, Vec2};
 
 /// A circle.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(PartialEq, Clone, Copy, Default, Debug)]
 pub struct Circle {
     /// The center.
     pub center: Point,
@@ -143,6 +143,21 @@ impl Iterator for CirclePathIter {
         } else {
             None
         }
+    }
+}
+
+use approx::AbsDiffEq;
+
+impl AbsDiffEq for Circle {
+    type Epsilon = f64;
+
+    fn default_epsilon() -> f64 {
+        1e-6
+    }
+
+    fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
+        Point::abs_diff_eq(&self.center, &other.center, epsilon)
+            && f64::abs_diff_eq(&self.radius, &other.radius, epsilon)
     }
 }
 
