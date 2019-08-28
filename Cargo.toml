@@ -26,3 +26,4 @@ optional = true
 # This is used for research but not really needed; maybe refactor.
 [dev-dependencies]
 rand = "0.6"
+rusty-fork = "0.2.1"

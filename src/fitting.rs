@@ -83,6 +83,14 @@ impl Constraint {
             false
         }
     }
+
+    fn get_fixed(&self) -> Option<Point> {
+        if let Constraint::Fixed(p) = *self {
+            Some(p)
+        } else {
+            None
+        }
+    }
 }
 
 fn initial_guess(points: &[Point]) -> CubicBez {
@@ -280,11 +288,12 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
 
     let (embedding, additive) = build_embedding(constraints);
 
-    let T_M_free = T * M_free;
+    let T_M_free = &T * &M_free; // FIXME: can be taken by value
     let T_M_free_embedded = &T_M_free * embedding;
     let additive_offset = T_M_free * additive;
     let P = P_base - P_offset - additive_offset;
 
+    println!("ts:{:?}\nT:\n{}\nM_free:{}\nT_M:\n{}\nP:{}", ts, &T, &M_free, &T_M_free_embedded, &P);
     // now we have T, M and P and can solve least squares for C
     let svd = T_M_free_embedded.svd(true, true);
     let least_sqr = svd.solve(&P, 0.).expect("solve failed");
@@ -321,6 +330,8 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
         ctrl_points.push(ctrl_point);
     };
 
+    dbg!("recovered");
+
     CubicBez {
         p0: ctrl_points[0],
         p1: ctrl_points[1],
@@ -329,13 +340,39 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
     }
 }
 
+fn cubic_to_svg(cubic: &CubicBez) -> String {
+    use crate::BezPath;
+    BezPath::from_path_segments([cubic.clone().into()].iter().cloned()).to_svg()
+}
+
 fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
     use crate::ParamCurveNearest;
 
     const NEAREST_PREC: f64 = 1e-6; // TODO: how much?
     const STOP_TOL: f64 = 1.; // TODO: how much?
+    const MAX_ITER: u32 = 64;
 
     let n_points = points.len();
+
+    assert!(n_points > 0);
+
+    // short circuit if the problem has no degrees of freedom
+    if constraints.iter().all(Constraint::is_fixed) {
+        let cubic_bez = CubicBez {
+            p0: constraints[0].get_fixed().unwrap(),
+            p1: constraints[1].get_fixed().unwrap(),
+            p2: constraints[2].get_fixed().unwrap(),
+            p3: constraints[3].get_fixed().unwrap(),
+        };
+
+        let total_error: f64 = points
+                            .iter()
+                            .map(|point| cubic_bez.nearest(*point, NEAREST_PREC).1)
+                            .sum();
+
+        return (total_error / n_points as f64, cubic_bez);
+    };
+
 
     let mut proposal = initial_guess(points);
 
@@ -343,8 +380,10 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
     // `error` and `new_error` report the _mean_ distance to each of the points
     let mut error = std::f64::INFINITY;
     let mut ts = vec![0.; n_points];
+    let mut iteration = 0;
 
     loop {
+        dbg!(cubic_to_svg(&proposal));
         let mut new_error = 0.;
 
         // find projections
@@ -362,12 +401,17 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
         if (new_error - error).abs() < STOP_TOL {
             error = new_error;
             break;
+        } else if iteration == MAX_ITER {
+            eprintln!("max iterations reached");
+            break;
         } else {
             error = new_error;
         };
 
+        dbg!();
         // fit a new curve with current projections
         proposal = fit_with_t(&points, &ts, constraints);
+        iteration += 1;
     };
 
     (error, proposal)
@@ -375,9 +419,9 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
 
 mod test {
     use crate::{
-        Point, CubicBez, ParamCurveFit, AbsDiffEq, assert_abs_diff_eq,
+        Point, CubicBez, assert_abs_diff_eq,
         fitting::{
-            M_8, Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
+            Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
         }
     };
     use Constraint::*;
@@ -505,33 +549,122 @@ mod test {
             Free
         ];
         
-        let (error, curve) = fit(&points, &constraints);
+        let (_error, curve) = fit(&points, &constraints);
+        assert_eq!(curve.p0, Point::new(5., 5.));
     }
 
-    #[test]
-    fn test_fitting_line() {
-        let points = [
-            Point::new(0., 0.),
-            Point::new(90., 60.),
-            Point::new(30., 10.),
-            Point::new(50., 30.),
-            Point::new(60., 20.),
-            Point::new(80., 15.),
-            Point::new(65., 40.)
-        ];
+    use rusty_fork::*;
 
-        let constraints: [Constraint; 4] = [
-            Line(Point::new(0., 0.), Point::new(1., 0.)),
-            Free,
-            Free,
-            Line(Point::new(0., 0.), Point::new(1., 1.)),
-        ];
-        
-        let (error, curve) = fit(&points, &constraints);
+    rusty_fork_test! {
+        #![rusty_fork(timeout_ms = 1000)]
 
-        assert_abs_diff_eq!(curve.p0.y, 0.);
+        #[test]
+        fn test_fitting_4() {
+            let points = [
+                Point::new(5., 7.),
+                Point::new(3., 2.),
+                Point::new(90., 60.),
+                Point::new(30., 10.),
+            ];
 
-        let p3 = curve.p3;
-        assert_abs_diff_eq!(p3.x - p3.y, 0.);
+            let constraints = [Free, Free, Free, Free];
+
+            let (error, _curve) = fit(&points, &constraints);
+            assert!(error < 5.);
+        }
+
+        #[test]
+        fn test_fitting_4_2() {
+            let points = [
+                Point::new(5., 7.),
+                Point::new(3., 2.),
+                Point::new(2., 10.),
+                Point::new(3., 13.),
+            ];
+
+            let constraints = [Free, Free, Free, Free];
+
+            let (error, _curve) = fit(&points, &constraints);
+            assert!(error < 5.);
+        }
+
+        #[test]
+        fn test_fitting_3() {
+            let points = [
+                Point::new(5., 7.),
+                Point::new(3., 2.),
+                Point::new(30., 10.),
+            ];
+
+            let constraints = [Free, Free, Free, Free];
+
+            let (error, _curve) = fit(&points, &constraints);
+            assert!(error < 5.);
+        }
+
+        #[test]
+        fn test_fitting_no_dof() {
+            let points = [
+                Point::new(0., 0.),
+                Point::new(90., 60.),
+                Point::new(30., 10.),
+                Point::new(50., 30.),
+                Point::new(60., 20.),
+                Point::new(80., 15.),
+                Point::new(65., 40.)
+            ];
+
+            let ctrl_points = [
+                Point::new(0., 0.),
+                Point::new(1., 0.),
+                Point::new(0., 2.),
+                Point::new(3., 3.),
+
+            ];
+
+            let constraints: [Constraint; 4] = [
+                ctrl_points[0].into(),
+                ctrl_points[1].into(),
+                ctrl_points[2].into(),
+                ctrl_points[3].into(),
+            ];
+
+            let (_error, curve) = fit(&points, &constraints);
+            let expected = CubicBez::new(
+                ctrl_points[0],
+                ctrl_points[1],
+                ctrl_points[2],
+                ctrl_points[3],
+            );
+
+            assert_abs_diff_eq!(curve, expected);
+        }
+
+        #[test]
+        fn test_fitting_line() {
+            let points = [
+                Point::new(0., 0.),
+                Point::new(90., 60.),
+                Point::new(30., 10.),
+                Point::new(50., 30.),
+                Point::new(60., 20.),
+                Point::new(80., 15.),
+                Point::new(65., 40.)
+            ];
+
+            let constraints: [Constraint; 4] = [
+                Line(Point::new(0., 0.), Point::new(1., 0.)),
+                Free,
+                Free,
+                Line(Point::new(0., 0.), Point::new(1., 1.)),
+            ];
+            
+            let (_error, curve) = fit(&points, &constraints);
+
+            assert_abs_diff_eq!(curve.p0.y, 0.);
+
+            let p3 = curve.p3;
+            assert_abs_diff_eq!(p3.x - p3.y, 0.);
+        }
     }
 }
