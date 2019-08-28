@@ -1,6 +1,9 @@
 use crate::{CubicBez, Point, Line, ParamCurveFit};
 
-use nalgebra::{U1, U2, U4, Dynamic, Matrix, VecStorage, Matrix4, linalg::LU};
+use nalgebra::{
+    U1, U2, U4, Dynamic, Matrix, VecStorage,
+    Vector2 as GVector2, Matrix4, linalg::LU
+};
 use lazy_static::lazy_static;
 
 type VMatrix<Col, Row> = Matrix<f64, Col, Row, VecStorage<f64, Col, Row>>;
@@ -9,6 +12,7 @@ type MatrixNx4 = VMatrix<Dynamic, U4>;
 type Matrix4xN = VMatrix<U4, Dynamic>;
 type VectorN = VMatrix<Dynamic, U1>;
 type MatrixNx2 = VMatrix<Dynamic, U2>;
+type Vector2 = GVector2<f64>;
 
 lazy_static! {
     static ref M_LU_DECOMP: LU<f64, U4, U4> = {
@@ -72,34 +76,10 @@ impl ParamCurveFit for CubicBez {
 
 
     fn initial_guess(points: &[Point]) -> Self {
-        fn initial_guess_inner(points: &[Point]) -> CubicBez {
-            let p0 = points.first().expect("failed to fetch the first point");
-            let pn = points.last().expect("failed to fetch the last point");
+        let p0 = points.first().expect("failed to fetch the first point");
+        let pn = points.last().expect("failed to fetch the last point");
 
-            Line::new(*p0, *pn).into()
-        }
-
-        //let matrix = MatrixNx2::from_fn(points.len(), |r, c| {
-        //    let point = points[r];
-
-        //    if c == 0 {
-        //        point.x
-        //    } else {
-        //        point.y
-        //    }
-        //});
-
-        //let svd = matrix.clone().svd(true, true);
-        //let u = svd.u.unwrap();
-        //let mut s = svd.singular_values;
-        //let v_t = svd.v_t.unwrap();
-
-        //let m = u * s * v_t;
-
-        //dbg!(&matrix, &m);
-        //dbg!(&u, &s, &v_t);
-
-        initial_guess_inner(points)
+        Line::new(*p0, *pn).into()
     }
 }
 
@@ -112,13 +92,21 @@ pub enum Constraint {
     /// The control point is fixed to be exactly equal to `Point`
     Fixed(Point),
     /// The control point is constrained to lie on the line
-    /// given by `a` * x + `b` * y + `c` = 0
-    Line(f64, f64, f64),
+    /// between the two points
+    Line(Point, Point),
 }
 
 impl Constraint {
     fn is_fixed(&self) -> bool {
         if let Constraint::Fixed(_) = *self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn is_line(&self) -> bool {
+        if let Constraint::Line(_, _) = *self {
             true
         } else {
             false
@@ -195,7 +183,14 @@ fn build_m(constraints: &[Constraint; 4], fixed: bool) -> DMatrix {
     M_8.select_columns(columns.iter())
 }
 
-fn build_embedding(constraints: &[Constraint; 4]) -> DMatrix {
+fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
+    let embed = Vector2::new(a.x - b.x, a.y - b.y);
+    let add = Vector2::new(b.x, b.y);
+
+    (embed, add)
+}
+
+fn build_embedding(constraints: &[Constraint; 4]) -> (DMatrix, VectorN) {
     use Constraint::*;
 
     let mut n_dof = 0;
@@ -203,7 +198,7 @@ fn build_embedding(constraints: &[Constraint; 4]) -> DMatrix {
     for constr in constraints {
         match constr {
             Fixed(_)   => continue,
-            Line(_, _, _) => {
+            Line(_, _) => {
                 n_dof += 1;
                 n_fit += 2;
             },
@@ -215,28 +210,40 @@ fn build_embedding(constraints: &[Constraint; 4]) -> DMatrix {
     };
 
     let mut embedding = DMatrix::zeros(n_fit, n_dof);
+    let mut additive = VectorN::zeros(n_fit);
 
     let mut row = 0;
     let mut col = 0;
+    debug_assert!(n_fit % 2 == 0);
+    let skip = n_fit / 2;
+
     for constr in constraints {
         match constr {
             Fixed(_)   => continue,
-            Line(x, y, _a) => {
-                *embedding.index_mut((row, col)) = *x;
-                *embedding.index_mut((row + 1, col)) = *y;
-                row += 2;
+
+            Line(a, b) => {
+                let (embed, add) = embed_add(a, b);
+
+                embedding[(row, col)] = embed[0];
+                embedding[(row+skip, col)] = embed[1];
+                additive[row] = add[0];
+                additive[row+skip] = add[1]; 
+
+                row += 1;
                 col += 1;
             },
+
             Free       => {
-                *embedding.index_mut((row, col)) = 1.;
-                *embedding.index_mut((row + 1, col + 1)) = 1.;
-                row += 2;
+                embedding[(row, col)] = 1.;
+                embedding[(row+skip, col+1)] = 1.;
+
+                row += 1;
                 col += 2;
             },
         };
     };
 
-    embedding
+    (embedding, additive)
 }
 
 fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
@@ -266,7 +273,6 @@ fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
 #[allow(non_snake_case)]
 fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> CubicBez {
     assert_eq!(points.len(), ts.len());
-
     let n_points = points.len();
 
     let M_free = build_m(constraints, false);
@@ -274,7 +280,6 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
     // T is of shape (2 * n_points, 2 * 4) in order to map from the
     // 8 coordinates of control points (4 x,y pairs) to the 2 * n_points
     // coordinates of each fitted point
-
     let T = {
         let T_small = DMatrix::from_fn(n_points, 4, |r, c| {
             ts[r].powi(c as i32)
@@ -282,8 +287,6 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
 
         two_block(&T_small)
     };
-
-    let T_t = T.transpose();
 
     let P_base = {
         let xs = points
@@ -301,24 +304,58 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
         &T * mc_offset
     };
 
-    let P = P_base - P_offset;
+    let (embedding, additive) = build_embedding(constraints);
 
-    // now we have T, M and P and can solve for C
+    let T_M_free = T * M_free;
+    let T_M_free_embedded = &T_M_free * embedding;
+    let additive_offset = T_M_free * additive;
+    let P = P_base - P_offset - additive_offset;
 
-    let T_t_P = &T_t * P;
-    let T_t_T_M = T_t * T * M_free;
-    
-    let solve_1 = T_t_T_M.lu().solve(&T_t_P).expect("solve_1 failed");
+    // now we have T, M and P and can solve least squares for C
+    let svd = T_M_free_embedded.svd(true, true);
+    let least_sqr = svd.solve(&P, 0.).expect("solve failed");
+
+    // and reconstruct the bezier control points
+    let mut ctrl_points = Vec::with_capacity(4);
+    let mut least_sqr_iter = least_sqr.iter();
+
+    for constr in constraints {
+        let ctrl_point = match constr {
+            // for free constraints, the coordinates are given explicitly
+            // in the least squares solution
+            Constraint::Free => {
+                let x = least_sqr_iter.next().unwrap();
+                let y = least_sqr_iter.next().unwrap();
+                Point::new(*x, *y)
+            },
+
+            // for line constraints, the solution contains only the parameter
+            // `t` which specifies the point along the line at which our control
+            // point should lie. We need to project it back to 2d
+            Constraint::Line(a, b) => {
+                let t = least_sqr_iter.next().unwrap();
+                let (embed, add) = embed_add(a, b);
+                let embedded = *t * embed + add;
+                Point::new(embedded[0], embedded[1])
+            },
+
+            // for fixed constraints, we have no data in the least squares solution
+            // but all we need is the constraint itself
+            Constraint::Fixed(point) => *point,
+        };
+
+        ctrl_points.push(ctrl_point);
+    };
 
     CubicBez {
-        p0: Point::new(solve_1[0], solve_1[4]),
-        p1: Point::new(solve_1[1], solve_1[5]),
-        p2: Point::new(solve_1[2], solve_1[6]),
-        p3: Point::new(solve_1[3], solve_1[7]),
+        p0: ctrl_points[0],
+        p1: ctrl_points[1],
+        p2: ctrl_points[2],
+        p3: ctrl_points[3]
     }
 }
 
-fn fit(points: &[Point], constraints: &[Constraint; 4]) -> CubicBez {
+fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
     use crate::ParamCurveNearest;
 
     const NEAREST_PREC: f64 = 1e-6; // TODO: how much?
@@ -329,6 +366,7 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> CubicBez {
     let mut proposal = initial_guess(points);
 
     // initialize with placeholders
+    // `error` and `new_error` report the _mean_ distance to each of the points
     let mut error = std::f64::INFINITY;
     let mut ts = vec![0.; n_points];
 
@@ -343,9 +381,12 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> CubicBez {
             ts[i] = nearest_t;
         };
 
-        dbg!(error, new_error);
+        new_error /= (n_points as f64);
+
+        dbg!("new iteration", error, new_error);
         // check if the curve is good enough
         if (new_error - error).abs() < STOP_TOL {
+            error = new_error;
             break;
         } else {
             error = new_error;
@@ -355,14 +396,14 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> CubicBez {
         proposal = fit_with_t(&points, &ts, constraints);
     };
 
-    proposal
+    (error, proposal)
 }
 
 mod test {
     use crate::{
-        Point, CubicBez, ParamCurveFit,
+        Point, CubicBez, ParamCurveFit, AbsDiffEq, assert_abs_diff_eq,
         fitting::{
-            M_8, Constraint, DMatrix, build_m, build_embedding, fit, two_block
+            M_8, Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
         }
     };
     use Constraint::*;
@@ -394,7 +435,7 @@ mod test {
     fn test_build_m_free() {
         let constraints = [
             Fixed((0., 0.).into()),
-            Line(1., 0., 2.),
+            Line(Point::new(0., 0.), Point::new(1., 1.)),
             Free,
             Fixed((0., 1.).into()),
         ];
@@ -420,7 +461,7 @@ mod test {
     fn test_build_m_fixed() {
         let constraints = [
             Fixed((0., 0.).into()),
-            Line(1., 0., 2.),
+            Line(Point::new(0., 0.), Point::new(1., 1.)),
             Free,
             Fixed((0., 1.).into()),
         ];
@@ -446,28 +487,33 @@ mod test {
     fn test_build_embedding() {
         let constraints = [
             Fixed((0., 0.).into()),
-            Line(1., 0., 2.),
+            Line(Point::new(2., 0.), Point::new(1., 0.)),
             Free,
             Fixed((0., 1.).into()),
         ];
 
-        let embedding = build_embedding(&constraints);
+        let (embedding, additive) = build_embedding(&constraints);
 
         let embedding_expected = DMatrix::from_row_slice(4, 3, &[
             1., 0., 0.,
-            0., 0., 0.,
             0., 1., 0.,
+            0., 0., 0.,
             0., 0., 1.,
         ]);
 
-        println!("{}", &embedding);
-        println!("{}", &embedding_expected);
+        let additive_expected = VectorN::from_row_slice(&[
+            1.,
+            0.,
+            0.,
+            0.
+        ]);
 
         assert_eq!(embedding, embedding_expected);
+        assert_eq!(additive, additive_expected);
     }
 
     #[test]
-    fn test_fitting() {
+    fn test_fitting_regression() {
         let points = [
             Point::new(0., 0.),
             Point::new(90., 60.),
@@ -485,10 +531,58 @@ mod test {
             Free
         ];
 
-        let cubic_bez = fit(&points, &constraints);
+        let (error, new_cubic_bez) = fit(&points, &constraints);
+        let old_cubic_bez = CubicBez::fit(&points);
 
-        let old = CubicBez::fit(&points);
+        assert_abs_diff_eq!(new_cubic_bez, old_cubic_bez);
+    }
 
-        assert_eq!(old, cubic_bez);
+    #[test]
+    fn test_fitting_fixed() {
+        let points = [
+            Point::new(0., 0.),
+            Point::new(90., 60.),
+            Point::new(30., 10.),
+            Point::new(50., 30.),
+            Point::new(60., 20.),
+            Point::new(80., 15.),
+            Point::new(65., 40.)
+        ];
+
+        let constraints: [Constraint; 4] = [
+            Fixed((5., 5.).into()),
+            Free,
+            Free,
+            Free
+        ];
+        
+        let (error, curve) = fit(&points, &constraints);
+    }
+
+    #[test]
+    fn test_fitting_line() {
+        let points = [
+            Point::new(0., 0.),
+            Point::new(90., 60.),
+            Point::new(30., 10.),
+            Point::new(50., 30.),
+            Point::new(60., 20.),
+            Point::new(80., 15.),
+            Point::new(65., 40.)
+        ];
+
+        let constraints: [Constraint; 4] = [
+            Line(Point::new(0., 0.), Point::new(1., 0.)),
+            Free,
+            Free,
+            Line(Point::new(0., 0.), Point::new(1., 1.)),
+        ];
+        
+        let (error, curve) = fit(&points, &constraints);
+
+        assert_abs_diff_eq!(curve.p0.y, 0.);
+
+        let p3 = curve.p3;
+        assert_abs_diff_eq!(p3.x - p3.y, 0.);
     }
 }

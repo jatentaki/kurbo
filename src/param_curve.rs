@@ -166,6 +166,7 @@ pub trait ParamCurveFit: ParamCurveNearest + Sized + std::fmt::Debug {
                 new_error += distance;
                 ts[i] = nearest_t;
             };
+            new_error /= (n_points as f64);
 
             dbg!(error, new_error);
             // check if the curve is good enough

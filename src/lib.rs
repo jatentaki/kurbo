@@ -54,3 +54,6 @@ pub use crate::size::*;
 pub use crate::svg::*;
 pub use crate::translate_scale::*;
 pub use crate::vec2::*;
+pub use approx::AbsDiffEq;
+
+use approx::assert_abs_diff_eq;
