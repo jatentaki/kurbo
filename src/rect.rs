@@ -323,10 +323,10 @@ impl AbsDiffEq for Rect {
     }
 
     fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
-        f64::abs_diff_eq(&self.x0, &other.x0, epsilon) &&
-        f64::abs_diff_eq(&self.y0, &other.y0, epsilon) &&
-        f64::abs_diff_eq(&self.x1, &other.x1, epsilon) &&
-        f64::abs_diff_eq(&self.y1, &other.y1, epsilon)
+        f64::abs_diff_eq(&self.x0, &other.x0, epsilon)
+            && f64::abs_diff_eq(&self.y0, &other.y0, epsilon)
+            && f64::abs_diff_eq(&self.x1, &other.x1, epsilon)
+            && f64::abs_diff_eq(&self.y1, &other.y1, epsilon)
     }
 }
 

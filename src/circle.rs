@@ -156,8 +156,8 @@ impl AbsDiffEq for Circle {
     }
 
     fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
-        Point::abs_diff_eq(&self.center, &other.center, epsilon) &&
-        f64::abs_diff_eq(&self.radius, &other.radius, epsilon)
+        Point::abs_diff_eq(&self.center, &other.center, epsilon)
+            && f64::abs_diff_eq(&self.radius, &other.radius, epsilon)
     }
 }
 

@@ -217,8 +217,8 @@ impl AbsDiffEq for Line {
     }
 
     fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
-        Point::abs_diff_eq(&self.p0, &other.p0, epsilon) &&
-        Point::abs_diff_eq(&self.p1, &other.p1, epsilon)
+        Point::abs_diff_eq(&self.p0, &other.p0, epsilon)
+            && Point::abs_diff_eq(&self.p1, &other.p1, epsilon)
     }
 }
 

@@ -252,9 +252,9 @@ impl AbsDiffEq for QuadBez {
     }
 
     fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
-        Point::abs_diff_eq(&self.p0, &other.p0, epsilon) &&
-        Point::abs_diff_eq(&self.p1, &other.p1, epsilon) &&
-        Point::abs_diff_eq(&self.p2, &other.p2, epsilon)
+        Point::abs_diff_eq(&self.p0, &other.p0, epsilon)
+            && Point::abs_diff_eq(&self.p1, &other.p1, epsilon)
+            && Point::abs_diff_eq(&self.p2, &other.p2, epsilon)
     }
 }
 

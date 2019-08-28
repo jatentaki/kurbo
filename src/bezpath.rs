@@ -517,7 +517,7 @@ impl AbsDiffEq for PathSeg {
             (Line(l1), Line(l2)) => LineBez::abs_diff_eq(l1, l2, epsilon),
             (Quad(q1), Quad(q2)) => QuadBez::abs_diff_eq(q1, q2, epsilon),
             (Cubic(c1), Cubic(c2)) => CubicBez::abs_diff_eq(c1, c2, epsilon),
-            _ => false
+            _ => false,
         }
     }
 }

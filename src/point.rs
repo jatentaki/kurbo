@@ -139,8 +139,7 @@ impl AbsDiffEq for Point {
     }
 
     fn abs_diff_eq(&self, other: &Self, epsilon: f64) -> bool {
-        f64::abs_diff_eq(&self.x, &other.x, epsilon) &&
-        f64::abs_diff_eq(&self.y, &other.y, epsilon)
+        f64::abs_diff_eq(&self.x, &other.x, epsilon) && f64::abs_diff_eq(&self.y, &other.y, epsilon)
     }
 }
 

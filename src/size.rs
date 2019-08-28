@@ -102,7 +102,6 @@ impl AbsDiffEq for Size {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
