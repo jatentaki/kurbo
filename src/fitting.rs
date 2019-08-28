@@ -1,112 +1,83 @@
 use crate::{CubicBez, Point, Line, ParamCurveFit};
 
 use nalgebra::{
-    U1, U2, U4, Dynamic, Matrix, VecStorage,
-    Vector2 as GVector2, Matrix4, linalg::LU
+    U1, Dynamic, Matrix, VecStorage, Vector2 as GVector2
 };
 use lazy_static::lazy_static;
 
 type VMatrix<Col, Row> = Matrix<f64, Col, Row, VecStorage<f64, Col, Row>>;
 
-type MatrixNx4 = VMatrix<Dynamic, U4>;
-type Matrix4xN = VMatrix<U4, Dynamic>;
+type DMatrix = VMatrix<Dynamic, Dynamic>;
 type VectorN = VMatrix<Dynamic, U1>;
-type MatrixNx2 = VMatrix<Dynamic, U2>;
 type Vector2 = GVector2<f64>;
 
-lazy_static! {
-    static ref M_LU_DECOMP: LU<f64, U4, U4> = {
-        #[allow(non_snake_case)]
-        let M = Matrix4::new(
-             1.,  0.,  0.,  0.,
-            -3.,  3.,  0.,  0.,
-             3., -6.,  3.,  0.,
-            -1.,  3., -3.,  1.
-        );
-        let lu = M.lu();
+/// Represents the three possible types of constraints imposed on control points
+/// when fitting curves.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Constraint {
 
-        lu
-    };
+    /// The control point is unconstrained.
+    Free,
+    
+    /// The control point is fixed to be exactly equal to `Point`. 
+    /// A `From<Point>` implementation is provided
+    /// to allow easy construction
+    /// ```
+    /// # use kurbo::{Point, Constraint};
+    /// let p = Point::new(0., 0.);
+    /// assert_eq!(Constraint::Fixed(p), p.into());
+    /// ```
+    Fixed(Point),
+    
+    /// The control point is constrained to lie on the line
+    /// between the two points.
+    /// A `From<(Point, Point)>` implementation is provided
+    /// to allow easy construction
+    /// ```
+    /// # use kurbo::{Point, Constraint};
+    /// let p1 = Point::new(0., 0.);
+    /// let p2 = Point::new(1., 0.);
+    /// assert_eq!(Constraint::Line(p1, p2), (p1, p2).into());
+    /// ```
+    Line(Point, Point),
+}
+
+impl From<Point> for Constraint {
+    /// Constructs a `Constraint::Fixed` variant from the point
+    /// ```
+    /// # use kurbo::{Point, Constraint};
+    /// let p = Point::new(0., 0.);
+    /// assert_eq!(Constraint::Fixed(p), p.into());
+    /// ```
+    fn from(p: Point) -> Constraint {
+        Constraint::Fixed(p)
+    }
+}
+
+impl From<(Point, Point)> for Constraint {
+    /// Constructs a `Constraint::Line` variant from the pair of points
+    /// ```
+    /// # use kurbo::{Point, Constraint};
+    /// let p1 = Point::new(0., 0.);
+    /// let p2 = Point::new(1., 0.);
+    /// assert_eq!(Constraint::Line(p1, p2), (p1, p2).into());
+    /// ```
+    fn from(ps: (Point, Point)) -> Constraint {
+        Constraint::Line(ps.0, ps.1)
+    }
 }
 
 impl ParamCurveFit for CubicBez {
-    #[allow(non_snake_case)]
-    fn fit_with_t(points: &[Point], ts: &[f64]) -> Self {
-        let T = MatrixNx4::from_fn(ts.len(), |r, c| ts[r].powi(c as i32));
-        let T_T = T.transpose();
-        let T_TT_lu = (&T_T * T).lu();
+    type Constraints = [Constraint; 4];
 
-        fn fit_single_coord(
-            n_points: usize,
-            coord: impl Iterator<Item=f64>,
-            t_tt_lu: &LU<f64, U4, U4>,
-            t_t: &Matrix4xN,
-            ) -> [f64; 4]
-        {
-            let P = VectorN::from_iterator(n_points, coord);
-
-            let T_TP = t_t * P;
-
-            let solve_1 = t_tt_lu.solve(&T_TP).expect("solve_1 failed");
-            let solve_2 = M_LU_DECOMP.solve(&solve_1).expect("solve_2 failed");
-
-            [solve_2[0], solve_2[1], solve_2[2], solve_2[3]]
-        };
-
-        let xs = fit_single_coord(
-            points.len(),
-            points.iter().map(|p| p.x),
-            &T_TT_lu,
-            &T_T
-        );
-        let ys = fit_single_coord(
-            points.len(),
-            points.iter().map(|p| p.y),
-            &T_TT_lu,
-            &T_T
-        );
-
-        CubicBez::new(
-            Point::new(xs[0], ys[0]),
-            Point::new(xs[1], ys[1]),
-            Point::new(xs[2], ys[2]),
-            Point::new(xs[3], ys[3])
-        )
+    fn fit(points: &[Point], constraints: &Self::Constraints) -> (f64, Self) {
+        fit(points, constraints)
     }
-
-
-    fn initial_guess(points: &[Point]) -> Self {
-        let p0 = points.first().expect("failed to fetch the first point");
-        let pn = points.last().expect("failed to fetch the last point");
-
-        Line::new(*p0, *pn).into()
-    }
-}
-
-/// Represents the three possible types of constraints imposed on control points
-/// when fitting curves
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Constraint {
-    /// The control point is unconstrained
-    Free,
-    /// The control point is fixed to be exactly equal to `Point`
-    Fixed(Point),
-    /// The control point is constrained to lie on the line
-    /// between the two points
-    Line(Point, Point),
 }
 
 impl Constraint {
     fn is_fixed(&self) -> bool {
         if let Constraint::Fixed(_) = *self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn is_line(&self) -> bool {
-        if let Constraint::Line(_, _) = *self {
             true
         } else {
             false
@@ -121,8 +92,11 @@ fn initial_guess(points: &[Point]) -> CubicBez {
     Line::new(*p0, *pn).into()
 }
 
-type DMatrix = VMatrix<Dynamic, Dynamic>;
-
+// builds a block-sparse matrix from the provided matrix such that
+// given block B, we have that
+//                [B  0]
+// two_block(B) = [    ] 
+//                [0  B]
 fn two_block(block: &DMatrix) -> DMatrix {
     let shape = block.shape();
 
@@ -381,7 +355,7 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
             ts[i] = nearest_t;
         };
 
-        new_error /= (n_points as f64);
+        new_error /= n_points as f64;
 
         dbg!("new iteration", error, new_error);
         // check if the curve is good enough
@@ -510,31 +484,6 @@ mod test {
 
         assert_eq!(embedding, embedding_expected);
         assert_eq!(additive, additive_expected);
-    }
-
-    #[test]
-    fn test_fitting_regression() {
-        let points = [
-            Point::new(0., 0.),
-            Point::new(90., 60.),
-            Point::new(30., 10.),
-            Point::new(50., 30.),
-            Point::new(60., 20.),
-            Point::new(80., 15.),
-            Point::new(65., 40.)
-        ];
-
-        let constraints: [Constraint; 4] = [
-            Free,
-            Free,
-            Free,
-            Free
-        ];
-
-        let (error, new_cubic_bez) = fit(&points, &constraints);
-        let old_cubic_bez = CubicBez::fit(&points);
-
-        assert_abs_diff_eq!(new_cubic_bez, old_cubic_bez);
     }
 
     #[test]
