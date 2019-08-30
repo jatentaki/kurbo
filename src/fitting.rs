@@ -293,7 +293,6 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
     let additive_offset = T_M_free * additive;
     let P = P_base - P_offset - additive_offset;
 
-    println!("ts:{:?}\nT:\n{}\nM_free:{}\nT_M:\n{}\nP:{}", ts, &T, &M_free, &T_M_free_embedded, &P);
     // now we have T, M and P and can solve least squares for C
     let svd = T_M_free_embedded.svd(true, true);
     let least_sqr = svd.solve(&P, 1e-6).expect("solve failed");
@@ -329,8 +328,6 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
 
         ctrl_points.push(ctrl_point);
     };
-
-    dbg!("recovered");
 
     CubicBez {
         p0: ctrl_points[0],
@@ -383,7 +380,6 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
     let mut iteration = 0;
 
     loop {
-        dbg!(cubic_to_svg(&proposal));
         let mut new_error = 0.;
 
         // find projections
@@ -396,13 +392,12 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
 
         new_error /= n_points as f64;
 
-        dbg!("new iteration", error, new_error);
         // check if the curve is good enough
         if (new_error - error).abs() < STOP_TOL {
             error = new_error;
             break;
         } else if iteration == MAX_ITER {
-            eprintln!("max iterations reached");
+            eprintln!("WARNING: max iterations reached when fitting a curve");
             break;
         } else {
             error = new_error;
