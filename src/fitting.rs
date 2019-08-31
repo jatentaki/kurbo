@@ -16,10 +16,10 @@ type Vector2 = GVector2<f64>;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Constraint {
 
-    /// The control point is unconstrained.
+    /// This control point is unconstrained.
     Free,
     
-    /// The control point is fixed to be exactly equal to `Point`. 
+    /// This control point is fixed to be exactly equal to `Point`. 
     /// A `From<Point>` implementation is provided
     /// to allow easy construction
     /// ```
@@ -29,7 +29,7 @@ pub enum Constraint {
     /// ```
     Fixed(Point),
     
-    /// The control point is constrained to lie on the line
+    /// This control point is constrained to lie on the line
     /// between the two points.
     /// A `From<(Point, Point)>` implementation is provided
     /// to allow easy construction
@@ -89,7 +89,7 @@ impl Constraint {
     }
 }
 
-pub(crate) fn initial_guess<T: From<Line>>(points: &[Point]) -> T {
+fn initial_guess<T: From<Line>>(points: &[Point]) -> T {
     let p0 = points.first().expect("failed to fetch the first point");
     let pn = points.last().expect("failed to fetch the last point");
 
@@ -101,7 +101,7 @@ pub(crate) fn initial_guess<T: From<Line>>(points: &[Point]) -> T {
 //                [B  0]
 // two_block(B) = [    ] 
 //                [0  B]
-pub(crate) fn two_block(block: &DMatrix) -> DMatrix {
+fn two_block(block: &DMatrix) -> DMatrix {
     let shape = block.shape();
 
     DMatrix::from_fn(2 * shape.0, 2 * shape.1, |r, c| {
@@ -119,7 +119,7 @@ pub(crate) fn two_block(block: &DMatrix) -> DMatrix {
 }
 
 
-pub(crate) fn build_m(constraints: &[Constraint], fixed: bool, dof: usize, M: &DMatrix)
+fn build_m(constraints: &[Constraint], fixed: bool, dof: usize, M: &DMatrix)
 -> DMatrix
 {
     assert_eq!(constraints.len(), dof);
@@ -145,14 +145,14 @@ pub(crate) fn build_m(constraints: &[Constraint], fixed: bool, dof: usize, M: &D
     M.select_columns(columns.iter())
 }
 
-pub(crate) fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
+fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
     let embed = Vector2::new(a.x - b.x, a.y - b.y);
     let add = Vector2::new(b.x, b.y);
 
     (embed, add)
 }
 
-pub(crate) fn build_embedding(constraints: &[Constraint]) -> (DMatrix, VectorN) {
+fn build_embedding(constraints: &[Constraint]) -> (DMatrix, VectorN) {
     use Constraint::*;
 
     let mut n_dof = 0;
@@ -208,7 +208,7 @@ pub(crate) fn build_embedding(constraints: &[Constraint]) -> (DMatrix, VectorN) 
     (embedding, additive)
 }
 
-pub(crate) fn build_mc_offset(constraints: &[Constraint], dof: usize, M: &DMatrix) -> VectorN {
+fn build_mc_offset(constraints: &[Constraint], dof: usize, M: &DMatrix) -> VectorN {
     assert_eq!(constraints.len(), dof);
     assert_eq!(M.shape().0, 2 * dof);
     assert_eq!(M.shape().1, 2 * dof);
@@ -236,7 +236,7 @@ pub(crate) fn build_mc_offset(constraints: &[Constraint], dof: usize, M: &DMatri
     m * c
 }
 
-pub(crate) fn fit_with_t<T: FromPointIter>(
+fn fit_with_t<T: FromPointIter>(
     points: &[Point], ts: &[f64], constraints: &[Constraint],
     dof: usize, M: &DMatrix) -> T
 {
