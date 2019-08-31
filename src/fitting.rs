@@ -7,8 +7,8 @@ use lazy_static::lazy_static;
 
 type VMatrix<Col, Row> = Matrix<f64, Col, Row, VecStorage<f64, Col, Row>>;
 
-type DMatrix = VMatrix<Dynamic, Dynamic>;
-type VectorN = VMatrix<Dynamic, U1>;
+pub(crate) type DMatrix = VMatrix<Dynamic, Dynamic>;
+pub(crate) type VectorN = VMatrix<Dynamic, U1>;
 type Vector2 = GVector2<f64>;
 
 /// Represents the three possible types of constraints imposed on control points
@@ -93,7 +93,7 @@ impl Constraint {
     }
 }
 
-fn initial_guess(points: &[Point]) -> CubicBez {
+pub(crate) fn initial_guess(points: &[Point]) -> CubicBez {
     let p0 = points.first().expect("failed to fetch the first point");
     let pn = points.last().expect("failed to fetch the last point");
 
@@ -105,7 +105,7 @@ fn initial_guess(points: &[Point]) -> CubicBez {
 //                [B  0]
 // two_block(B) = [    ] 
 //                [0  B]
-fn two_block(block: &DMatrix) -> DMatrix {
+pub(crate) fn two_block(block: &DMatrix) -> DMatrix {
     let shape = block.shape();
 
     DMatrix::from_fn(2 * shape.0, 2 * shape.1, |r, c| {
@@ -145,7 +145,7 @@ lazy_static! {
     };
 }
 
-fn build_m(constraints: &[Constraint; 4], fixed: bool) -> DMatrix {
+pub(crate) fn build_m(constraints: &[Constraint; 4], fixed: bool) -> DMatrix {
     let mut columns = Vec::<usize>::with_capacity(8);
 
     // pick X coordinate columns (0..4)
@@ -165,14 +165,14 @@ fn build_m(constraints: &[Constraint; 4], fixed: bool) -> DMatrix {
     M_8.select_columns(columns.iter())
 }
 
-fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
+pub(crate) fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
     let embed = Vector2::new(a.x - b.x, a.y - b.y);
     let add = Vector2::new(b.x, b.y);
 
     (embed, add)
 }
 
-fn build_embedding(constraints: &[Constraint; 4]) -> (DMatrix, VectorN) {
+pub(crate) fn build_embedding(constraints: &[Constraint; 4]) -> (DMatrix, VectorN) {
     use Constraint::*;
 
     let mut n_dof = 0;
@@ -228,7 +228,7 @@ fn build_embedding(constraints: &[Constraint; 4]) -> (DMatrix, VectorN) {
     (embedding, additive)
 }
 
-fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
+pub(crate) fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
     let m = build_m(&constraints, true);
     let mut xs = vec![];
     let mut ys = vec![];
@@ -253,7 +253,7 @@ fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
 }
 
 #[allow(non_snake_case)]
-fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> CubicBez {
+pub(crate) fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> CubicBez {
     assert_eq!(points.len(), ts.len());
     let n_points = points.len();
 
@@ -337,12 +337,7 @@ fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> Cu
     }
 }
 
-fn cubic_to_svg(cubic: &CubicBez) -> String {
-    use crate::BezPath;
-    BezPath::from_path_segments([cubic.clone().into()].iter().cloned()).to_svg()
-}
-
-fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
+pub(crate) fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
     use crate::ParamCurveNearest;
 
     const NEAREST_PREC: f64 = 1e-6; // TODO: how much?
@@ -414,7 +409,7 @@ fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
 #[cfg(test)]
 mod test {
     use crate::{
-        Point, CubicBez, assert_abs_diff_eq,
+        Point, CubicBez, assert_abs_diff_eq, ParamCurveFit,
         fitting::{
             Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
         }
@@ -544,7 +539,7 @@ mod test {
             Free
         ];
         
-        let (_error, curve) = fit(&points, &constraints);
+        let (_error, curve) = CubicBez::fit(&points, &constraints);
         assert_eq!(curve.p0, Point::new(5., 5.));
     }
 
@@ -559,7 +554,7 @@ mod test {
 
         let constraints = [Free, Free, Free, Free];
 
-        let (error, _curve) = fit(&points, &constraints);
+        let (error, _curve) = CubicBez::fit(&points, &constraints);
         assert!(error < 5.);
     }
 
@@ -573,7 +568,7 @@ mod test {
 
         let constraints = [Free, Free, Free, Free];
 
-        let (error, _curve) = fit(&points, &constraints);
+        let (error, _curve) = CubicBez::fit(&points, &constraints);
         assert!(error < 5.);
     }
 
@@ -604,7 +599,7 @@ mod test {
             ctrl_points[3].into(),
         ];
 
-        let (_error, curve) = fit(&points, &constraints);
+        let (_error, curve) = CubicBez::fit(&points, &constraints);
         let expected = CubicBez::new(
             ctrl_points[0],
             ctrl_points[1],
@@ -634,7 +629,7 @@ mod test {
             Line(Point::new(0., 0.), Point::new(1., 1.)),
         ];
         
-        let (_error, curve) = fit(&points, &constraints);
+        let (_error, curve) = CubicBez::fit(&points, &constraints);
 
         assert_abs_diff_eq!(curve.p0.y, 0.);
 
