@@ -1,38 +1,48 @@
 use crate::{
     Point, QuadBez, ParamCurveFit, Constraint,
-    fitting::{DMatrix, VectorN}
+    fitting::{DMatrix, fit, FromPointIter}
 };
 use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref M_6: DMatrix = {
+        // This matrix is actually block-diagonal and could be simplified as
+        //
+        // M_6 = [[M, 0],
+        //        [0, M]]
+        //
+        // where M is the matrix defined in
+        // https://pomax.github.io/bezierinfo/#curvefitting
+
+        DMatrix::from_row_slice(6, 6, &[
+             1.,  0.,  0.,   0.,  0.,  0.,
+            -2.,  2.,  0.,   0.,  0.,  0.,
+             1., -2.,  1.,   0.,  0.,  0.,
+
+             0.,  0.,  0.,   1.,  0.,  0.,
+             0.,  0.,  0.,  -2.,  2.,  0.,
+             0.,  0.,  0.,   1., -2.,  1.,
+         ])
+    };
+}
+
+impl FromPointIter for QuadBez {
+    fn from_point_iter(mut iter: impl Iterator<Item = Point>) -> Self {
+        let p0 = iter.next().unwrap();
+        let p1 = iter.next().unwrap();
+        let p2 = iter.next().unwrap();
+        assert!(iter.next().is_none(), "iterator not exhausted");
+
+        QuadBez { p0, p1, p2 }
+    }
+}
 
 impl ParamCurveFit for QuadBez {
     type Constraints = [Constraint; 3];
 
     fn fit(points: &[Point], constraints: &Self::Constraints) -> (f64, Self) {
-        unimplemented!();
+        fit::<QuadBez>(points, constraints, 3, &M_6)
     }
-}
-
-lazy_static! {
-    static ref M_8: DMatrix = {
-        // This matrix is actually block-diagonal and could be simplified as
-        //
-        // M_8 = [[M, 0],
-        //        [0, M]]
-        //
-        // where M is the matrix defined in
-        // https://pomax.github.io/bezierinfo/#curvefitting
-        DMatrix::from_row_slice(8, 8, &[
-             1.,  0.,  0.,  0.,    0.,  0.,  0.,  0.,
-            -3.,  3.,  0.,  0.,    0.,  0.,  0.,  0.,
-             3., -6.,  3.,  0.,    0.,  0.,  0.,  0.,
-            -1.,  3., -3.,  1.,    0.,  0.,  0.,  0.,
-
-             0.,  0.,  0.,  0.,    1.,  0.,  0.,  0.,
-             0.,  0.,  0.,  0.,   -3.,  3.,  0.,  0.,
-             0.,  0.,  0.,  0.,    3., -6.,  3.,  0.,
-             0.,  0.,  0.,  0.,   -1.,  3., -3.,  1.,
-        ])
-    };
 }
 
 #[cfg(test)]

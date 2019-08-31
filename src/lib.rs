@@ -57,8 +57,6 @@ pub use crate::svg::*;
 pub use crate::translate_scale::*;
 pub use crate::vec2::*;
 pub use fitting::*;
-pub use quadfit::*;
-pub use cubicfit::*;
 pub use approx::AbsDiffEq;
 
 #[cfg(test)]

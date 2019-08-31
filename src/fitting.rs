@@ -1,9 +1,9 @@
-use crate::{CubicBez, Point, Line, ParamCurveFit};
+#![allow(non_snake_case)]
+use crate::{CubicBez, Point, Line, ParamCurveNearest, ParamCurveFit};
 
 use nalgebra::{
     U1, Dynamic, Matrix, VecStorage, Vector2 as GVector2
 };
-use lazy_static::lazy_static;
 
 type VMatrix<Col, Row> = Matrix<f64, Col, Row, VecStorage<f64, Col, Row>>;
 
@@ -67,6 +67,9 @@ impl From<(Point, Point)> for Constraint {
     }
 }
 
+pub(crate) trait FromPointIter {
+    fn from_point_iter(iter: impl Iterator<Item = Point>) -> Self;
+}
 
 impl Constraint {
     fn is_fixed(&self) -> bool {
@@ -86,7 +89,7 @@ impl Constraint {
     }
 }
 
-pub(crate) fn initial_guess(points: &[Point]) -> CubicBez {
+pub(crate) fn initial_guess<T: From<Line>>(points: &[Point]) -> T {
     let p0 = points.first().expect("failed to fetch the first point");
     let pn = points.last().expect("failed to fetch the last point");
 
@@ -115,47 +118,31 @@ pub(crate) fn two_block(block: &DMatrix) -> DMatrix {
     })
 }
 
-lazy_static! {
-    static ref M_8: DMatrix = {
-        // This matrix is actually block-diagonal and could be simplified as
-        //
-        // M_8 = [[M, 0],
-        //        [0, M]]
-        //
-        // where M is the matrix defined in
-        // https://pomax.github.io/bezierinfo/#curvefitting
-        DMatrix::from_row_slice(8, 8, &[
-             1.,  0.,  0.,  0.,    0.,  0.,  0.,  0.,
-            -3.,  3.,  0.,  0.,    0.,  0.,  0.,  0.,
-             3., -6.,  3.,  0.,    0.,  0.,  0.,  0.,
-            -1.,  3., -3.,  1.,    0.,  0.,  0.,  0.,
 
-             0.,  0.,  0.,  0.,    1.,  0.,  0.,  0.,
-             0.,  0.,  0.,  0.,   -3.,  3.,  0.,  0.,
-             0.,  0.,  0.,  0.,    3., -6.,  3.,  0.,
-             0.,  0.,  0.,  0.,   -1.,  3., -3.,  1.,
-        ])
-    };
-}
+pub(crate) fn build_m(constraints: &[Constraint], fixed: bool, dof: usize, M: &DMatrix)
+-> DMatrix
+{
+    assert_eq!(constraints.len(), dof);
+    assert_eq!(M.shape().0, 2 * dof);
+    assert_eq!(M.shape().1, 2 * dof);
 
-pub(crate) fn build_m(constraints: &[Constraint; 4], fixed: bool) -> DMatrix {
-    let mut columns = Vec::<usize>::with_capacity(8);
+    let mut columns = Vec::<usize>::with_capacity(2*dof);
 
-    // pick X coordinate columns (0..4)
+    // pick X coordinate columns (0..DOF)
     for (i, constr) in constraints.iter().enumerate() {
         if fixed == constr.is_fixed() {
             columns.push(i);
         }
     }
 
-    // pick Y coordinate columns (4..8)
+    // pick Y coordinate columns (DOF..2*DOF)
     for (i, constr) in constraints.iter().enumerate() {
         if fixed == constr.is_fixed() {
-            columns.push(i + 4);
+            columns.push(i + dof);
         }
     }
     
-    M_8.select_columns(columns.iter())
+    M.select_columns(columns.iter())
 }
 
 pub(crate) fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
@@ -165,7 +152,7 @@ pub(crate) fn embed_add(a: &Point, b: &Point) -> (Vector2, Vector2) {
     (embed, add)
 }
 
-pub(crate) fn build_embedding(constraints: &[Constraint; 4]) -> (DMatrix, VectorN) {
+pub(crate) fn build_embedding(constraints: &[Constraint]) -> (DMatrix, VectorN) {
     use Constraint::*;
 
     let mut n_dof = 0;
@@ -221,8 +208,12 @@ pub(crate) fn build_embedding(constraints: &[Constraint; 4]) -> (DMatrix, Vector
     (embedding, additive)
 }
 
-pub(crate) fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
-    let m = build_m(&constraints, true);
+pub(crate) fn build_mc_offset(constraints: &[Constraint], dof: usize, M: &DMatrix) -> VectorN {
+    assert_eq!(constraints.len(), dof);
+    assert_eq!(M.shape().0, 2 * dof);
+    assert_eq!(M.shape().1, 2 * dof);
+
+    let m = build_m(constraints, true, dof, M);
     let mut xs = vec![];
     let mut ys = vec![];
 
@@ -245,18 +236,23 @@ pub(crate) fn build_mc_offset(constraints: &[Constraint; 4]) -> VectorN {
     m * c
 }
 
-#[allow(non_snake_case)]
-pub(crate) fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint; 4]) -> CubicBez {
+pub(crate) fn fit_with_t<T: FromPointIter>(
+    points: &[Point], ts: &[f64], constraints: &[Constraint],
+    dof: usize, M: &DMatrix) -> T
+{
+    assert_eq!(constraints.len(), dof);
+    assert_eq!(M.shape().0, 2 * dof);
+    assert_eq!(M.shape().1, 2 * dof);
     assert_eq!(points.len(), ts.len());
     let n_points = points.len();
 
-    let M_free = build_m(constraints, false);
+    let M_free = build_m(constraints, false, dof, &M);
 
     // T is of shape (2 * n_points, 2 * 4) in order to map from the
     // 8 coordinates of control points (4 x,y pairs) to the 2 * n_points
     // coordinates of each fitted point
     let T = {
-        let T_small = DMatrix::from_fn(n_points, 4, |r, c| {
+        let T_small = DMatrix::from_fn(n_points, dof, |r, c| {
             ts[r].powi(c as i32)
         });
 
@@ -275,7 +271,7 @@ pub(crate) fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint
     };
 
     let P_offset = {
-        let mc_offset = build_mc_offset(constraints);
+        let mc_offset = build_mc_offset(constraints, dof, M);
         &T * mc_offset
     };
 
@@ -291,7 +287,7 @@ pub(crate) fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint
     let least_sqr = svd.solve(&P, 1e-6).expect("solve failed");
 
     // and reconstruct the bezier control points
-    let mut ctrl_points = Vec::with_capacity(4);
+    let mut ctrl_points = Vec::with_capacity(dof);
     let mut least_sqr_iter = least_sqr.iter();
 
     for constr in constraints {
@@ -322,16 +318,14 @@ pub(crate) fn fit_with_t(points: &[Point], ts: &[f64], constraints: &[Constraint
         ctrl_points.push(ctrl_point);
     };
 
-    CubicBez {
-        p0: ctrl_points[0],
-        p1: ctrl_points[1],
-        p2: ctrl_points[2],
-        p3: ctrl_points[3]
-    }
+    assert_eq!(ctrl_points.len(), dof);
+    T::from_point_iter(ctrl_points.into_iter())
 }
 
-pub(crate) fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, CubicBez) {
-    use crate::ParamCurveNearest;
+pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line>>(
+    points: &[Point], constraints: &[Constraint], dof: usize, M: &DMatrix)
+-> (f64, T)
+{
 
     const NEAREST_PREC: f64 = 1e-6; // TODO: how much?
     const STOP_TOL: f64 = 1.; // TODO: how much?
@@ -343,23 +337,22 @@ pub(crate) fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, Cubi
 
     // short circuit if the problem has no degrees of freedom
     if constraints.iter().all(Constraint::is_fixed) {
-        let cubic_bez = CubicBez {
-            p0: constraints[0].get_fixed().unwrap(),
-            p1: constraints[1].get_fixed().unwrap(),
-            p2: constraints[2].get_fixed().unwrap(),
-            p3: constraints[3].get_fixed().unwrap(),
-        };
+        let bezier = T::from_point_iter(
+            constraints
+                .iter()
+                .map(|c| c.get_fixed().unwrap())
+        );
 
         let total_error: f64 = points
                             .iter()
-                            .map(|point| cubic_bez.nearest(*point, NEAREST_PREC).1)
+                            .map(|point| bezier.nearest(*point, NEAREST_PREC).1)
                             .sum();
 
-        return (total_error / n_points as f64, cubic_bez);
+        return (total_error / n_points as f64, bezier);
     };
 
 
-    let mut proposal = initial_guess(points);
+    let mut proposal = initial_guess::<T>(points);
 
     // initialize with placeholders
     // `error` and `new_error` report the _mean_ distance to each of the points
@@ -392,7 +385,8 @@ pub(crate) fn fit(points: &[Point], constraints: &[Constraint; 4]) -> (f64, Cubi
         };
 
         // fit a new curve with current projections
-        proposal = fit_with_t(&points, &ts, constraints);
+        proposal = fit_with_t::<T>(&points, &ts, constraints, dof, M);
+
         iteration += 1;
     };
 
@@ -405,7 +399,8 @@ mod test {
         Point, CubicBez, assert_abs_diff_eq, ParamCurveFit,
         fitting::{
             Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
-        }
+        },
+        cubicfit::M_8
     };
     use Constraint::*;
 
@@ -441,7 +436,7 @@ mod test {
             Fixed((0., 1.).into()),
         ];
 
-        let m_free = build_m(&constraints, false);
+        let m_free = build_m(&constraints, false, 4, &M_8);
 
         let m_free_expected = DMatrix::from_row_slice(8, 4, &[
              0.,  0.,     0.,  0.,
@@ -467,7 +462,7 @@ mod test {
             Fixed((0., 1.).into()),
         ];
 
-        let m_fixed = build_m(&constraints, true);
+        let m_fixed = build_m(&constraints, true, 4, &M_8);
 
         let m_fixed_expected = DMatrix::from_row_slice(8, 4, &[
              1.,  0.,    0.,  0.,

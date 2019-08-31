@@ -1,14 +1,49 @@
 use crate::{
-    Constraint, CubicBez, Point, Line, ParamCurveFit, fitting::fit
+    Constraint, CubicBez, Point, Line, ParamCurveFit,
+    fitting::{DMatrix, fit, FromPointIter}
 };
 use lazy_static::lazy_static;
 
+lazy_static! {
+    pub(crate) static ref M_8: DMatrix = {
+        // This matrix is actually block-diagonal and could be simplified as
+        //
+        // M_8 = [[M, 0],
+        //        [0, M]]
+        //
+        // where M is the matrix defined in
+        // https://pomax.github.io/bezierinfo/#curvefitting
+        DMatrix::from_row_slice(8, 8, &[
+             1.,  0.,  0.,  0.,    0.,  0.,  0.,  0.,
+            -3.,  3.,  0.,  0.,    0.,  0.,  0.,  0.,
+             3., -6.,  3.,  0.,    0.,  0.,  0.,  0.,
+            -1.,  3., -3.,  1.,    0.,  0.,  0.,  0.,
+
+             0.,  0.,  0.,  0.,    1.,  0.,  0.,  0.,
+             0.,  0.,  0.,  0.,   -3.,  3.,  0.,  0.,
+             0.,  0.,  0.,  0.,    3., -6.,  3.,  0.,
+             0.,  0.,  0.,  0.,   -1.,  3., -3.,  1.,
+        ])
+    };
+}
+
+impl FromPointIter for CubicBez {
+    fn from_point_iter(mut iter: impl Iterator<Item = Point>) -> Self {
+        let p0 = iter.next().unwrap();
+        let p1 = iter.next().unwrap();
+        let p2 = iter.next().unwrap();
+        let p3 = iter.next().unwrap();
+        assert!(iter.next().is_none(), "iterator not exhausted");
+
+        CubicBez { p0, p1, p2, p3 }
+    }
+}
 
 impl ParamCurveFit for CubicBez {
     type Constraints = [Constraint; 4];
 
     fn fit(points: &[Point], constraints: &Self::Constraints) -> (f64, Self) {
-        fit(points, constraints)
+        fit::<CubicBez>(points, constraints, 4, &M_8)
     }
 }
 
