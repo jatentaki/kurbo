@@ -37,6 +37,7 @@ mod translate_scale;
 mod vec2;
 mod fitting;
 mod quadfit;
+mod cubicfit;
 mod conversions;
 
 pub use crate::affine::*;
@@ -57,6 +58,7 @@ pub use crate::translate_scale::*;
 pub use crate::vec2::*;
 pub use fitting::*;
 pub use quadfit::*;
+pub use cubicfit::*;
 pub use approx::AbsDiffEq;
 
 #[cfg(test)]
