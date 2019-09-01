@@ -2,7 +2,7 @@
 
 use arrayvec::ArrayVec;
 
-/// Find real roots of a polynomial up degree of 3. 
+/// Find real roots of a polynomial up degree of 3.
 ///
 /// Returns values of x for which c0 + c1 x + c2 x² + c3 x³ = 0, allowing for the coefficients
 /// to be equal to 0.
@@ -23,7 +23,7 @@ pub(crate) fn solve_poly_3(c0: f64, c1: f64, c2: f64, c3: f64) -> ArrayVec<[f64;
         roots.push(0.);
     };
 
-    return roots
+    return roots;
 }
 
 /// Find real roots of cubic equation.

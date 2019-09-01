@@ -371,12 +371,12 @@ mod tests {
             p2: (65.0, 40.0).into(),
         };
 
-       let p: Point = (90., 30.).into();
+        let p: Point = (90., 30.).into();
 
-       let (t, d) = quad.nearest(p, 1e-6);
+        let (t, d) = quad.nearest(p, 1e-6);
 
-       assert!(!t.is_nan());
-       assert!(!d.is_nan());
+        assert!(!t.is_nan());
+        assert!(!d.is_nan());
     }
 
     #[test]
