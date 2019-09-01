@@ -35,7 +35,7 @@ mod size;
 mod svg;
 mod translate_scale;
 mod vec2;
-mod fitting;
+pub mod fitting;
 mod quadfit;
 mod cubicfit;
 mod conversions;
@@ -56,7 +56,7 @@ pub use crate::size::*;
 pub use crate::svg::*;
 pub use crate::translate_scale::*;
 pub use crate::vec2::*;
-pub use fitting::*;
+//pub use fitting::*;
 pub use approx::AbsDiffEq;
 
 #[cfg(test)]

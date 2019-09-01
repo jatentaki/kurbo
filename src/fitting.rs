@@ -1,15 +1,80 @@
 #![allow(non_snake_case)]
-use crate::{CubicBez, Point, Line, ParamCurveNearest, ParamCurveFit};
+
+//! Tools for fitting curves to sets of points.
+
+/*! 
+# General usage
+The general interface to this module is through the `ParamCurveFit` trait, which is currently
+implemented for `CubicBez` and `QuadBez`. These implementations allow for specifying one constraint
+per each control point. Below is an example of fitting a freeform (unconstrained) cubic and
+quadratic Bezier curves to 5 points.
+```rust
+use kurbo::{Point, CubicBez, QuadBez, fitting::{ParamCurveFit, Constraint::Free}};
+
+let point_cloud: &[Point] = &[
+    (0., 2.).into(),
+    (1., 3.).into(),
+    (2., 2.).into(),
+    (1., 0.).into(),
+    (3., 3.).into(),
+];
+
+let cubic_fit = CubicBez::fit(point_cloud, &[Free, Free, Free, Free]);
+let quadratic_fit = QuadBez::fit(point_cloud, &[Free, Free, Free]);
+```
+
+# The algorithm
+## The problem
+The problem of fitting quadratic and cubic Bezier curves to sets of points does not have an exact
+solution. If we knew which is the value of the parameter `t` closest to each point's
+projection on the best-fit curve, the problem would reduce to a standard least squares problem,
+solvable exactly using standard methods of linear algebra. However, to find the closest `t`, we
+would need to already have the solution.
+
+## The approach
+This crate approaches this problem in a fashion similar to expectation-maximization: given an
+initial guess for the curve C, we follow in a two-step iteration where each time we find the
+closest `t` values given the current C and then solve the least squares fit using those `t`
+values. In Python-like pseudocode, the algorithm looks as follows:
+
+```python
+def fit(points):
+    proposal = initial_guess(points)
+
+    while True:
+        error = 0.
+        approximate_ts = []
+
+        for point in points:
+            distance, t = project_on_curve(point, proposal)
+            error += distance
+            approximate_ts.append(t)
+
+        if is_low_enough(error):
+            return proposal
+
+        proposal = solve_least_squares(points, approximate_ts)
+```
+
+This algorithm is not guaranteed to yield the best approximation to the input points, however
+since both steps of the iteration reduce the error, this scheme is guaranteed to converge.
+*/
+
+use crate::{Point, Line, ParamCurveNearest};
 
 use nalgebra::{
     U1, Dynamic, Matrix, VecStorage, Vector2 as GVector2
 };
 
-type VMatrix<Col, Row> = Matrix<f64, Col, Row, VecStorage<f64, Col, Row>>;
+/// A parametrized curve which can be fitted to a set of points given constraints.
+pub trait ParamCurveFit: ParamCurveNearest {
+    type Constraints;
 
-pub(crate) type DMatrix = VMatrix<Dynamic, Dynamic>;
-pub(crate) type VectorN = VMatrix<Dynamic, U1>;
-type Vector2 = GVector2<f64>;
+    /// Find the curve which best approximates a set of points in
+    /// the least squares metric. Returns the mean fit error across all points
+    /// and the fitted curve
+    fn fit(points: &[Point], constaints: &Self::Constraints) -> (f64, Self);
+}
 
 /// Represents the three possible types of constraints imposed on control points
 /// when fitting curves.
@@ -23,7 +88,7 @@ pub enum Constraint {
     /// A `From<Point>` implementation is provided
     /// to allow easy construction
     /// ```
-    /// # use kurbo::{Point, Constraint};
+    /// # use kurbo::{Point, fitting::Constraint};
     /// let p = Point::new(0., 0.);
     /// assert_eq!(Constraint::Fixed(p), p.into());
     /// ```
@@ -34,37 +99,12 @@ pub enum Constraint {
     /// A `From<(Point, Point)>` implementation is provided
     /// to allow easy construction
     /// ```
-    /// # use kurbo::{Point, Constraint};
+    /// # use kurbo::{Point, fitting::Constraint};
     /// let p1 = Point::new(0., 0.);
     /// let p2 = Point::new(1., 0.);
     /// assert_eq!(Constraint::Line(p1, p2), (p1, p2).into());
     /// ```
     Line(Point, Point),
-}
-
-impl From<Point> for Constraint {
-    /// Constructs a `Constraint::Fixed` variant from the point
-    /// ```
-    /// # use kurbo::{Point, Constraint};
-    /// let p = Point::new(0., 0.);
-    /// assert_eq!(Constraint::Fixed(p), p.into());
-    /// ```
-    fn from(p: Point) -> Constraint {
-        Constraint::Fixed(p)
-    }
-}
-
-impl From<(Point, Point)> for Constraint {
-    /// Constructs a `Constraint::Line` variant from the pair of points
-    /// ```
-    /// # use kurbo::{Point, Constraint};
-    /// let p1 = Point::new(0., 0.);
-    /// let p2 = Point::new(1., 0.);
-    /// assert_eq!(Constraint::Line(p1, p2), (p1, p2).into());
-    /// ```
-    fn from(ps: (Point, Point)) -> Constraint {
-        Constraint::Line(ps.0, ps.1)
-    }
 }
 
 impl Constraint {
@@ -84,6 +124,38 @@ impl Constraint {
         }
     }
 }
+
+impl From<Point> for Constraint {
+    /// Constructs a `Constraint::Fixed` variant from the point
+    /// ```
+    /// # use kurbo::{Point, fitting::Constraint};
+    /// let p = Point::new(0., 0.);
+    /// assert_eq!(Constraint::Fixed(p), p.into());
+    /// ```
+    fn from(p: Point) -> Constraint {
+        Constraint::Fixed(p)
+    }
+}
+
+impl From<(Point, Point)> for Constraint {
+    /// Constructs a `Constraint::Line` variant from the pair of points
+    /// ```
+    /// # use kurbo::{Point, fitting::Constraint};
+    /// let p1 = Point::new(0., 0.);
+    /// let p2 = Point::new(1., 0.);
+    /// assert_eq!(Constraint::Line(p1, p2), (p1, p2).into());
+    /// ```
+    fn from(ps: (Point, Point)) -> Constraint {
+        Constraint::Line(ps.0, ps.1)
+    }
+}
+
+type VMatrix<Col, Row> = Matrix<f64, Col, Row, VecStorage<f64, Col, Row>>;
+
+pub(crate) type DMatrix = VMatrix<Dynamic, Dynamic>;
+pub(crate) type VectorN = VMatrix<Dynamic, U1>;
+type Vector2 = GVector2<f64>;
+
 
 // A helper trait to reduce code duplication in `fit_with_t` method below. Implemented
 // on fittable types
@@ -404,9 +476,9 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line> + std::fmt::
 #[cfg(test)]
 mod test {
     use crate::{
-        Point, CubicBez, assert_abs_diff_eq, ParamCurveFit,
+        Point,
         fitting::{
-            Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
+            Constraint, DMatrix, build_m, build_embedding, two_block, VectorN
         },
         cubicfit::M_8
     };

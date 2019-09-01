@@ -1,6 +1,6 @@
 use crate::{
-    Point, QuadBez, ParamCurveFit, Constraint,
-    fitting::{DMatrix, fit, FromPointIter}
+    Point, QuadBez,
+    fitting::{DMatrix, fit, FromPointIter, Constraint, ParamCurveFit}
 };
 use lazy_static::lazy_static;
 
@@ -40,6 +40,24 @@ impl FromPointIter for QuadBez {
 impl ParamCurveFit for QuadBez {
     type Constraints = [Constraint; 3];
 
+    /// Fit a quadratic Bezier curve which tries to best approximate the points
+    /// provided in the `points` argument. Additionally, it accepts an array
+    /// of 3 `Constraint`s, one per each control point (`p0`, `p1`, `p2`).
+    /// 
+    /// Example use below:
+    /// ```rust
+    /// use kurbo::{Point, QuadBez, fitting::{ParamCurveFit, Constraint::Free}};
+
+    /// let points: &[Point] = &[
+    ///     (0., 2.).into(),
+    ///     (1., 3.).into(),
+    ///     (2., 2.).into(),
+    ///     (1., 0.).into(),
+    ///     (3., 3.).into(),
+    /// ];
+
+    /// let cubic_fit = QuadBez::fit(points, &[Free, Free, Free]);
+    /// ```
     fn fit(points: &[Point], constraints: &Self::Constraints) -> (f64, Self) {
         fit::<QuadBez>(points, constraints, 3, &M_6)
     }
@@ -48,8 +66,8 @@ impl ParamCurveFit for QuadBez {
 #[cfg(test)]
 mod test {
     use crate::{
-        Constraint, Point, QuadBez, assert_abs_diff_eq, ParamCurveFit,
-        fitting::DMatrix,
+        Point, QuadBez, assert_abs_diff_eq,
+        fitting::{Constraint, ParamCurveFit},
     };
     use Constraint::*;
 

@@ -139,16 +139,6 @@ pub trait ParamCurveNearest {
     fn nearest(&self, p: Point, accuracy: f64) -> (f64, f64);
 }
 
-/// A parametrized curve which can be fitted to a set of points given constraints
-pub trait ParamCurveFit: ParamCurveNearest {
-    type Constraints;
-
-    /// Find the curve which best approximates a set of points in
-    /// the least squares metric. Returns the mean fit error across all points
-    /// and the fitted curve
-    fn fit(points: &[Point], constaints: &Self::Constraints) -> (f64, Self);
-}
-
 /// A parametrized curve that reports its curvature.
 pub trait ParamCurveCurvature: ParamCurveDeriv
 where

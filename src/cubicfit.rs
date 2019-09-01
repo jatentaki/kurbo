@@ -1,6 +1,6 @@
 use crate::{
-    Constraint, CubicBez, Point, Line, ParamCurveFit,
-    fitting::{DMatrix, fit, FromPointIter}
+    CubicBez, Point,
+    fitting::{DMatrix, fit, FromPointIter, ParamCurveFit, Constraint}
 };
 use lazy_static::lazy_static;
 
@@ -42,6 +42,24 @@ impl FromPointIter for CubicBez {
 impl ParamCurveFit for CubicBez {
     type Constraints = [Constraint; 4];
 
+    /// Fit a cubic Bezier curve which tries to best approximate the points
+    /// provided in the `points` argument. Additionally, it accepts an array
+    /// of 4 `Constraint`s, one per each control point (`p0`, `p1`, `p2`, `p3`).
+    /// 
+    /// Example use below:
+    /// ```rust
+    /// use kurbo::{Point, CubicBez, fitting::{ParamCurveFit, Constraint::Free}};
+
+    /// let points: &[Point] = &[
+    ///     (0., 2.).into(),
+    ///     (1., 3.).into(),
+    ///     (2., 2.).into(),
+    ///     (1., 0.).into(),
+    ///     (3., 3.).into(),
+    /// ];
+
+    /// let cubic_fit = CubicBez::fit(points, &[Free, Free, Free, Free]);
+    /// ```
     fn fit(points: &[Point], constraints: &Self::Constraints) -> (f64, Self) {
         fit::<CubicBez>(points, constraints, 4, &M_8)
     }
@@ -50,7 +68,8 @@ impl ParamCurveFit for CubicBez {
 #[cfg(test)]
 mod test {
     use crate::{
-        Constraint, Point, CubicBez, assert_abs_diff_eq, ParamCurveFit,
+        Point, CubicBez, assert_abs_diff_eq,
+        fitting::{Constraint, ParamCurveFit}
     };
     use Constraint::*;
 
