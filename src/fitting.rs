@@ -332,7 +332,6 @@ fn fit_with_t<T: FromPointIter>(
             ts[r].powi(c as i32)
         });
 
-        dbg!(ts, &T_small);
         two_block(&T_small)
     };
 
@@ -354,8 +353,7 @@ fn fit_with_t<T: FromPointIter>(
 
     let (embedding, additive) = build_embedding(constraints);
 
-    dbg!(&P_base, &P_offset, &T, &M_free);
-    let T_M_free = &T * &M_free; // FIXME: T can be taken by value
+    let T_M_free = T * &M_free;
     let T_M_free_embedded = &T_M_free * embedding;
     let additive_offset = T_M_free * additive;
     let P = P_base - P_offset - additive_offset;
@@ -431,7 +429,6 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line> + std::fmt::
 
 
     let mut proposal = initial_guess::<T>(points);
-    dbg!(&proposal);
 
     // initialize with placeholders
     // `error` and `new_error` report the _mean_ distance to each of the points
@@ -446,7 +443,6 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line> + std::fmt::
         for i in 0..n_points {
             let point = points[i];
             let (nearest_t, distance) = proposal.nearest(point, NEAREST_PREC);
-            dbg!(&point, &nearest_t, &distance);
             new_error += distance;
             ts[i] = nearest_t;
         };
