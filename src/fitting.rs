@@ -310,56 +310,81 @@ fn build_mc_offset(constraints: &[Constraint], dof: usize, M: &DMatrix) -> Vecto
     m * c
 }
 
+struct MatrixCache {
+    dof: usize,
+    M_free: DMatrix,
+    P_base: VectorN,
+    MC_offset: VectorN,
+    embedding: DMatrix,
+    additive: VectorN,
+}
+
+impl MatrixCache {
+    fn new(points: &[Point], constraints: &[Constraint], dof: usize, M: &DMatrix) -> Self {
+        assert_eq!(constraints.len(), dof);
+        assert_eq!(M.shape().0, 2 * dof);
+        assert_eq!(M.shape().1, 2 * dof);
+
+        let M_free = build_m(constraints, false, dof, &M);
+
+        let P_base = {
+            let xs = points
+                        .iter()
+                        .map(|p| p.x);
+            let ys = points
+                        .iter()
+                        .map(|p| p.y);
+
+            VectorN::from_iterator(points.len() * 2, xs.chain(ys))
+        };
+
+        let MC_offset = build_mc_offset(constraints, dof, M);
+
+        let (embedding, additive) = build_embedding(constraints);
+
+        MatrixCache {
+            dof: dof,
+            M_free: M_free,
+            P_base: P_base,
+            MC_offset: MC_offset,
+            embedding: embedding,
+            additive: additive
+        }
+    }
+
+    fn TM_and_P(&self, ts: &[f64]) -> (DMatrix, VectorN) {
+        let T = {
+            let T_small = DMatrix::from_fn(ts.len(), self.dof, |r, c| {
+                ts[r].powi(c as i32)
+            });
+
+            two_block(&T_small)
+        };
+
+        let P_offset = &T * &self.MC_offset;
+
+        let T_M_free = T * &self.M_free;
+        let T_M_free_embedded = &T_M_free * &self.embedding;
+        let additive_offset = &T_M_free * &self.additive;
+        let P = &self.P_base - P_offset - additive_offset;
+
+        (T_M_free_embedded, P)
+    }
+}
+
 // TODO: improve performance by caching matrices such as `P_base`, `embedding`, `additive`,
 // `P_offset` inside the `fit` parent instead of recomputing them each time inside `fit_with_t`
 fn fit_with_t<T: FromPointIter>(
     points: &[Point], ts: &[f64], constraints: &[Constraint],
-    dof: usize, M: &DMatrix) -> T
+    dof: usize, M: &DMatrix, matrix_cache: &MatrixCache) -> T
 {
-    assert_eq!(constraints.len(), dof);
-    assert_eq!(M.shape().0, 2 * dof);
-    assert_eq!(M.shape().1, 2 * dof);
     assert_eq!(points.len(), ts.len());
-    let n_points = points.len();
-
-    let M_free = build_m(constraints, false, dof, &M);
-
-    // T is of shape (2 * `n_points`, 2 * `dof`) in order to map from the
-    // 2 * `dof` coordinates of control points (`dof` x,y pairs) to the 2 * `n_points`
-    // coordinates of each fitted point
-    let T = {
-        let T_small = DMatrix::from_fn(n_points, dof, |r, c| {
-            ts[r].powi(c as i32)
-        });
-
-        two_block(&T_small)
-    };
-
-    let P_base = {
-        let xs = points
-                    .iter()
-                    .map(|p| p.x);
-        let ys = points
-                    .iter()
-                    .map(|p| p.y);
-
-        VectorN::from_iterator(points.len() * 2, xs.chain(ys))
-    };
-
-    let P_offset = {
-        let mc_offset = build_mc_offset(constraints, dof, M);
-        &T * mc_offset
-    };
-
-    let (embedding, additive) = build_embedding(constraints);
-
-    let T_M_free = T * &M_free;
-    let T_M_free_embedded = &T_M_free * embedding;
-    let additive_offset = T_M_free * additive;
-    let P = P_base - P_offset - additive_offset;
+    let matrix_cache = MatrixCache::new(points, constraints, dof, M);
+    let (TM, P) = matrix_cache.TM_and_P(ts);
+//    dbg!(&TM, &P);
 
     // now we have T, M and P and can solve least squares for C
-    let svd = T_M_free_embedded.svd(true, true);
+    let svd = TM.svd(true, true);
     let least_sqr = svd.solve(&P, 1e-6).expect("solve failed");
 
     // and reconstruct the bezier control points
@@ -427,7 +452,7 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line> + std::fmt::
         return (total_error / n_points as f64, bezier);
     };
 
-
+    let matrix_cache = MatrixCache::new(points, constraints, dof, M);
     let mut proposal = initial_guess::<T>(points);
 
     // initialize with placeholders
@@ -461,7 +486,7 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line> + std::fmt::
         };
 
         // fit a new curve with current projections
-        proposal = fit_with_t::<T>(&points, &ts, constraints, dof, M);
+        proposal = fit_with_t::<T>(&points, &ts, constraints, dof, M, &matrix_cache);
 
         iteration += 1;
     };
