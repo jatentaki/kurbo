@@ -48,10 +48,8 @@ impl ParamCurveFit for QuadBez {
 #[cfg(test)]
 mod test {
     use crate::{
-        Point, QuadBez, assert_abs_diff_eq, ParamCurveFit,
-        fitting::{
-            Constraint, DMatrix, build_m, build_embedding, fit, two_block, VectorN
-        }
+        Constraint, Point, QuadBez, assert_abs_diff_eq, ParamCurveFit,
+        fitting::DMatrix,
     };
     use Constraint::*;
 

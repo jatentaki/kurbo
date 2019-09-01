@@ -67,10 +67,6 @@ impl From<(Point, Point)> for Constraint {
     }
 }
 
-pub(crate) trait FromPointIter {
-    fn from_point_iter(iter: impl Iterator<Item = Point>) -> Self;
-}
-
 impl Constraint {
     fn is_fixed(&self) -> bool {
         if let Constraint::Fixed(_) = *self {
@@ -87,6 +83,12 @@ impl Constraint {
             None
         }
     }
+}
+
+// A helper trait to reduce code duplication in `fit_with_t` method below. Implemented
+// on fittable types
+pub(crate) trait FromPointIter {
+    fn from_point_iter(iter: impl Iterator<Item = Point>) -> Self;
 }
 
 fn initial_guess<T: From<Line>>(points: &[Point]) -> T {
@@ -236,6 +238,8 @@ fn build_mc_offset(constraints: &[Constraint], dof: usize, M: &DMatrix) -> Vecto
     m * c
 }
 
+// TODO: improve performance by caching matrices such as `P_base`, `embedding`, `additive`,
+// `P_offset` inside the `fit` parent instead of recomputing them each time inside `fit_with_t`
 fn fit_with_t<T: FromPointIter>(
     points: &[Point], ts: &[f64], constraints: &[Constraint],
     dof: usize, M: &DMatrix) -> T
@@ -248,14 +252,15 @@ fn fit_with_t<T: FromPointIter>(
 
     let M_free = build_m(constraints, false, dof, &M);
 
-    // T is of shape (2 * n_points, 2 * 4) in order to map from the
-    // 8 coordinates of control points (4 x,y pairs) to the 2 * n_points
+    // T is of shape (2 * `n_points`, 2 * `dof`) in order to map from the
+    // 2 * `dof` coordinates of control points (`dof` x,y pairs) to the 2 * `n_points`
     // coordinates of each fitted point
     let T = {
         let T_small = DMatrix::from_fn(n_points, dof, |r, c| {
             ts[r].powi(c as i32)
         });
 
+        dbg!(ts, &T_small);
         two_block(&T_small)
     };
 
@@ -277,7 +282,8 @@ fn fit_with_t<T: FromPointIter>(
 
     let (embedding, additive) = build_embedding(constraints);
 
-    let T_M_free = &T * &M_free; // FIXME: can be taken by value
+    dbg!(&P_base, &P_offset, &T, &M_free);
+    let T_M_free = &T * &M_free; // FIXME: T can be taken by value
     let T_M_free_embedded = &T_M_free * embedding;
     let additive_offset = T_M_free * additive;
     let P = P_base - P_offset - additive_offset;
@@ -322,7 +328,7 @@ fn fit_with_t<T: FromPointIter>(
     T::from_point_iter(ctrl_points.into_iter())
 }
 
-pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line>>(
+pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line> + std::fmt::Debug>(
     points: &[Point], constraints: &[Constraint], dof: usize, M: &DMatrix)
 -> (f64, T)
 {
@@ -353,6 +359,7 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line>>(
 
 
     let mut proposal = initial_guess::<T>(points);
+    dbg!(&proposal);
 
     // initialize with placeholders
     // `error` and `new_error` report the _mean_ distance to each of the points
@@ -367,6 +374,7 @@ pub(crate) fn fit<T: FromPointIter + ParamCurveNearest + From<Line>>(
         for i in 0..n_points {
             let point = points[i];
             let (nearest_t, distance) = proposal.nearest(point, NEAREST_PREC);
+            dbg!(&point, &nearest_t, &distance);
             new_error += distance;
             ts[i] = nearest_t;
         };
