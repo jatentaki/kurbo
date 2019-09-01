@@ -370,18 +370,23 @@ impl MatrixCache {
 
         (T_M_free_embedded, P)
     }
+
+    fn print(&self) {
+        println!("MatrixCache {{\n\tdof: {dof}\n\tM_free: {M_free}\n\tP_base: {P_base}\n\tMC_offset: {MC_offset}\n\tembedding: {embedding}\n\tadditive: {additive}\n}}", dof=self.dof,
+        M_free=self.M_free, P_base=self.P_base, MC_offset=self.MC_offset, embedding=self.embedding, additive=self.additive);
+    }
 }
 
 // TODO: improve performance by caching matrices such as `P_base`, `embedding`, `additive`,
 // `P_offset` inside the `fit` parent instead of recomputing them each time inside `fit_with_t`
 fn fit_with_t<T: FromPointIter>(
     points: &[Point], ts: &[f64], constraints: &[Constraint],
-    dof: usize, M: &DMatrix, matrix_cache: &MatrixCache) -> T
+    dof: usize, M: &DMatrix, _matrix_cache: &MatrixCache) -> T
 {
     assert_eq!(points.len(), ts.len());
     let matrix_cache = MatrixCache::new(points, constraints, dof, M);
+    //matrix_cache.print();
     let (TM, P) = matrix_cache.TM_and_P(ts);
-//    dbg!(&TM, &P);
 
     // now we have T, M and P and can solve least squares for C
     let svd = TM.svd(true, true);
